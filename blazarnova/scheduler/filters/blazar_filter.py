@@ -39,7 +39,11 @@ opts = [
                help='Aggregate metadata key for knowing owner project_id'),
     cfg.StrOpt('blazar_az_prefix',
                default='blazar_',
-               help='Prefix for Availability Zones created by Blazar')
+               help='Prefix for Availability Zones created by Blazar'),
+    cfg.StrOpt('preemptible_project_id',
+               default=None,
+               help='ID of a project allowed to create preemptible instances '
+                    'in the freepool')
 ]
 
 cfg.CONF.register_opts(opts, 'blazar:physical:host')
@@ -133,9 +137,20 @@ class BlazarFilter(filters.BaseHostFilter):
             # reservation key.
             return True
 
-        if self.fetch_blazar_pools(host_state):
+        blazar_pools = self.fetch_blazar_pools(host_state)
+        # If project is allowed to run preemptible instances
+        if (cfg.CONF['blazar:physical:host'].preemptible_project_id ==
+                spec_obj.project_id):
+            if (len(blazar_pools) == 1 and blazar_pools[0].name ==
+                    cfg.CONF['blazar:physical:host'].aggregate_freepool_name):
+                # Pass host if it only belongs to the freepool
+                LOG.info("Host %s requested for preemptibles" % host_state)
+                return True
+            return False
+
+        if blazar_pools:
             # Host is in a blazar pool and non reservation request
-            LOG.info(_("In a user pool or in the freepool"))
+            LOG.info("Host is in a reservation aggregate or in the freepool")
             return False
 
         return True
