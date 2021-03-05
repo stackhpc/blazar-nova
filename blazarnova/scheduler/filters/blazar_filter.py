@@ -60,6 +60,18 @@ class BlazarFilter(filters.BaseHostFilter):
 
     run_filter_once_per_request = True
 
+    def fetch_tenant_blazar_pools(self, host_state, spec_obj):
+        aggregates = host_state.aggregates
+        aggregate_uuids_for_tenant = set([])
+
+        for agg in aggregates:
+            owner = cfg.CONF['blazar:physical:host'].blazar_owner
+            owner_project_id = agg.metadata.get(owner)
+            if owner_project_id == spec_obj.project_id:
+                return True
+
+        return aggregate_uuids_for_tenant
+
     def fetch_blazar_pools(self, host_state):
         # Get any reservation pools this host is part of
         # Note this include possibly the freepool
@@ -148,10 +160,11 @@ class BlazarFilter(filters.BaseHostFilter):
             # reservation key.
             return True
 
+        blazar_pools = self.fetch_blazar_pools(host_state)
+
         allow_preempt = cfg.CONF['blazar:physical:host'].allow_preemptibles
         preemptible = bool_from_string(
             extra_specs.get(FLAVOR_PREEMPTIBLE, False))
-        blazar_pools = self.fetch_blazar_pools(host_state)
         # If the request is for a preemptible instance and they are allowed
         if allow_preempt and preemptible:
             if (len(blazar_pools) == 1 and blazar_pools[0].name ==
@@ -160,6 +173,10 @@ class BlazarFilter(filters.BaseHostFilter):
                 LOG.info("Host %s requested for preemptibles" % host_state)
                 return True
             return False
+
+        if not requested_pools:
+            if self.fetch_tenant_blazar_pools(host_state, spec_obj):
+                return True
 
         if blazar_pools:
             # Host is in a blazar pool and non reservation request
